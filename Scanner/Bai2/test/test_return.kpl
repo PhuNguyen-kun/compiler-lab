@@ -1,0 +1,8 @@
+function test() : integer;
+begin
+  return 5;
+end;
+
+switch x
+begin
+end;

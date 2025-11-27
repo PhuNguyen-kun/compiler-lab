@@ -1,0 +1,3 @@
+var my_variable : integer;
+var very_long_identifier_name : integer;
+var _private : integer;

@@ -62,45 +62,49 @@
    // Báo lỗi ở vị trí của '(' mở đầu, nhưng thực tế expected muốn báo ở vị trí EOF
    error(ERR_ENDOFCOMMENT, lineNo, colNo);
  }
+
+ void skipLineComment() {
+  // Khi vào hàm, currentChar = '/' thứ 2
+  readChar();  // Bỏ qua '/' thứ 2
+  
+  // Đọc cho đến cuối dòng hoặc EOF
+  while (currentChar != EOF && currentChar != '\n') {
+    readChar();
+  }
+  // '\n' sẽ được xử lý bởi skipBlank()
+}
  
  Token* readIdentKeyword(void) {
-   // Khi vào hàm này, currentChar là CHAR_LETTER (ký tự đầu tiên)
-   // Mục tiêu: đọc identifier/keyword và phân loại
-   
    Token *token = makeToken(TK_IDENT, lineNo, colNo);
    int count = 0;
-   
-   // Đọc tất cả các ký tự letter và digit
+  
+   // Đọc letter, digit và underscore
    while (currentChar != EOF && 
           (charCodes[currentChar] == CHAR_LETTER || 
-           charCodes[currentChar] == CHAR_DIGIT)) {
-     
-     // Chỉ lưu nếu chưa vượt quá giới hạn
+           charCodes[currentChar] == CHAR_DIGIT ||
+           charCodes[currentChar] == CHAR_UNDERSCORE)) {  // Thêm underscore
+    
      if (count < MAX_IDENT_LEN) {
        token->string[count++] = (char)currentChar;
      }
-     // Vẫn phải readChar() để đọc hết identifier
      readChar();
    }
    
-   // Kết thúc chuỗi
+   // Chỉ lấy 9 ký tự đầu, không báo lỗi
    if (count <= MAX_IDENT_LEN) {
      token->string[count] = '\0';
    } else {
-     // Quá dài: chỉ lấy MAX_IDENT_LEN ký tự đầu
-     token->string[MAX_IDENT_LEN] = '\0';
-     error(ERR_IDENTTOOLONG, token->lineNo, token->colNo);
-     return token;
+     token->string[MAX_IDENT_LEN] = '\0';  // Cắt bớt, không báo lỗi
    }
-   
-   // Kiểm tra xem có phải từ khóa không
+  
+   // Kiểm tra từ khóa
    TokenType keywordType = checkKeyword(token->string);
    if (keywordType != TK_NONE) {
      token->tokenType = keywordType;
    }
-   
+  
    return token;
- }
+}
  
  Token* readNumber(void) {
    // Khi vào hàm này, currentChar là CHAR_DIGIT (chữ số đầu tiên)
@@ -177,33 +181,51 @@
    switch (charCodes[currentChar]) {
    case CHAR_SPACE: skipBlank(); return getToken();
    case CHAR_LETTER: return readIdentKeyword();
+   case CHAR_UNDERSCORE:  // Cho phép bắt đầu bằng _
+     return readIdentKeyword();
    case CHAR_DIGIT: return readNumber();
-   case CHAR_PLUS: 
-     token = makeToken(SB_PLUS, lineNo, colNo);
-     readChar(); 
-     return token;
+   case CHAR_PLUS:  // Xử lý + và +=
+     ln = lineNo; cn = colNo;
+     readChar();
+     if (currentChar != EOF && charCodes[currentChar] == CHAR_EQ) {
+       readChar();
+       return makeToken(SB_PLUS_ASSIGN, ln, cn);  // +=
+     }
+    return makeToken(SB_PLUS, ln, cn);  // +
    case CHAR_MINUS:
      token = makeToken(SB_MINUS, lineNo, colNo);
      readChar();
      return token;
-   case CHAR_TIMES:
-     token = makeToken(SB_TIMES, lineNo, colNo);
+   case CHAR_TIMES:  // Xử lý * và *=
+     ln = lineNo; cn = colNo;
      readChar();
-     return token;
-   case CHAR_SLASH:
-     token = makeToken(SB_SLASH, lineNo, colNo);
+     if (currentChar != EOF && charCodes[currentChar] == CHAR_EQ) {
+       readChar();
+       return makeToken(SB_TIMES_ASSIGN, ln, cn);  // *=
+     }
+    return makeToken(SB_TIMES, ln, cn);  // *
+   case CHAR_SLASH:  // Xử lý / và //
+     ln = lineNo; cn = colNo;
      readChar();
-     return token;
+     if (currentChar != EOF && charCodes[currentChar] == CHAR_SLASH) {
+       skipLineComment();  // Bỏ qua comment dòng
+       return getToken();   // Lấy token tiếp theo
+     }
+     return makeToken(SB_SLASH, ln, cn);  // /
    case CHAR_LT:
      ln = lineNo;
      cn = colNo;
      readChar();
-     if (currentChar != EOF && charCodes[currentChar] == CHAR_EQ) {
-       readChar();
-       return makeToken(SB_LE, ln, cn); // <=
-     } else {
-       return makeToken(SB_LT, ln, cn); // <
+     if (currentChar != EOF) {
+       if (charCodes[currentChar] == CHAR_EQ) {
+         readChar();
+         return makeToken(SB_LE, ln, cn);  // <=
+       } else if (charCodes[currentChar] == CHAR_GT) {
+         readChar();
+         return makeToken(SB_NEQ, ln, cn);  // <> → SB_NEQ
+       }
      }
+    return makeToken(SB_LT, ln, cn);  // <
    case CHAR_GT:
      ln = lineNo;
      cn = colNo;
@@ -220,11 +242,9 @@
      readChar();
      if (currentChar != EOF && charCodes[currentChar] == CHAR_EQ) {
        readChar();
-       return makeToken(SB_NEQ, ln, cn); // !=
+       return makeToken(SB_NEQ, ln, cn);  // != → SB_NEQ
      } else {
-       token = makeToken(TK_NONE, ln, cn);
        error(ERR_INVALIDSYMBOL, ln, cn);
-       return token;
      }
    case CHAR_EQ:
      token = makeToken(SB_EQ, lineNo, colNo);
@@ -278,6 +298,14 @@
      token = makeToken(SB_RPAR, lineNo, colNo);
      readChar();
      return token;
+   case CHAR_LBRACK:  // Xử lý [
+     token = makeToken(SB_LSEL, lineNo, colNo);
+     readChar();
+     return token;    
+   case CHAR_RBRACK:  // Xử lý ]
+     token = makeToken(SB_RSEL, lineNo, colNo);
+     readChar();
+     return token;
    default:
      token = makeToken(TK_NONE, lineNo, colNo);
      error(ERR_INVALIDSYMBOL, lineNo, colNo);
@@ -320,7 +348,9 @@
    case KW_DO: printf("KW_DO\n"); break;
    case KW_FOR: printf("KW_FOR\n"); break;
    case KW_TO: printf("KW_TO\n"); break;
- 
+   case KW_RETURN: printf("KW_RETURN\n"); break;  // Thêm case mới
+   case KW_SWITCH: printf("KW_SWITCH\n"); break;  // Thêm case mới
+
    case SB_SEMICOLON: printf("SB_SEMICOLON\n"); break;
    case SB_COLON: printf("SB_COLON\n"); break;
    case SB_PERIOD: printf("SB_PERIOD\n"); break;
@@ -335,6 +365,8 @@
    case SB_PLUS: printf("SB_PLUS\n"); break;
    case SB_MINUS: printf("SB_MINUS\n"); break;
    case SB_TIMES: printf("SB_TIMES\n"); break;
+   case SB_PLUS_ASSIGN: printf("SB_PLUS_ASSIGN\n"); break;
+   case SB_TIMES_ASSIGN: printf("SB_TIMES_ASSIGN\n"); break;
    case SB_SLASH: printf("SB_SLASH\n"); break;
    case SB_LPAR: printf("SB_LPAR\n"); break;
    case SB_RPAR: printf("SB_RPAR\n"); break;

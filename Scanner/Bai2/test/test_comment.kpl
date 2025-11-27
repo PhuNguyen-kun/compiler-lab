@@ -1,0 +1,7 @@
+program test; // This is a comment
+var x : integer; // Variable x
+begin
+  x := 5; // Assignment
+  // This entire line is a comment
+  x := x / 2; (* Old style comment *)
+end.

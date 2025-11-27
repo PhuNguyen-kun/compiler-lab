@@ -26,6 +26,9 @@ typedef enum {
   CHAR_SINGLEQUOTE,
   CHAR_LPAR,
   CHAR_RPAR,
+  CHAR_LBRACK, // Thêm ký tự [
+  CHAR_RBRACK, // Thêm ký tự ]
+  CHAR_UNDERSCORE,
   CHAR_UNKNOWN
 } CharCode;
 
